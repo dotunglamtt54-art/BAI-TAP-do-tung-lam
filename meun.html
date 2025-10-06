@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ứng Dụng Todo List - Lưu Trữ Cục Bộ</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+       
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f9fb;
+        }
+       
+        #taskList {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        #taskList::-webkit-scrollbar {
+            width: 8px;
+        }
+        #taskList::-webkit-scrollbar-thumb {
+            background-color: #cbd5e1;
+            border-radius: 4px;
+        }
+      
+        .completed-task {
+            text-decoration: line-through;
+            opacity: 0.6;
+            transition: all 0.3s ease;
+        }
+        .task-item {
+            transition: all 0.3s ease;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8 min-h-screen flex items-start justify-center">
+
+
+    <div class="w-full max-w-lg bg-white shadow-2xl rounded-xl p-6 md:p-8 border border-gray-100">
+        <h1 class="text-3xl font-bold text-gray-800 mb-2 flex items-center">
+            <i data-lucide="check-square" class="w-7 h-7 mr-2 text-indigo-600"></i>
+            Danh Sách Công Việc
+        </h1>
+        <p class="text-sm text-gray-500 mb-6">Sử dụng LocalStorage để lưu trữ dữ liệu (Lưu trữ Cục bộ).</p>
+
+      
+        <div id="userIdDisplay" class="text-xs text-gray-400 mb-4 truncate">
+            ID Người Dùng: simulated_user_id (Giả lập)
+        </div>
+
+      
+        <div class="flex space-x-3 mb-6">
+            <input type="text" id="taskInput" placeholder="Thêm công việc mới..."
+                   class="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-gray-700 transition duration-150">
+            <button id="addTaskButton"
+                    class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-4 rounded-lg shadow-md transition duration-200 transform hover:scale-[1.02]">
+                <i data-lucide="plus" class="w-5 h-5"></i>
+            </button>
+        </div>
+
+
+        <div id="taskList" class="space-y-3">
+           
+            <div class="text-center text-gray-500 py-8" id="loadingIndicator">
+                Đang tải công việc...
+            </div>
+        </div>
+        
+        
+        <div id="messageBox" class="mt-6 text-center text-sm p-3 rounded-lg bg-red-100 text-red-700 hidden" role="alert">
+            <!-- Thông báo lỗi sẽ hiện ở đây -->
+        </div>
+
+    </div>
+
+    <script type="module">
+        // --- Cấu hình Lưu trữ Cục bộ và Giả lập User ID ---
+        const userId = 'simulated_user_id';
+        // Khóa lưu trữ LocalStorage, đảm bảo duy nhất cho người dùng giả lập
+        const STORAGE_KEY = `todo_app_${userId}`; 
+        
+        // Các phần tử DOM
+        const taskListEl = document.getElementById('taskList');
+        const taskInputEl = document.getElementById('taskInput');
+        const addTaskButtonEl = document.getElementById('addTaskButton');
+        const messageBoxEl = document.getElementById('messageBox');
+        const loadingIndicatorEl = document.getElementById('loadingIndicator');
+
+        /**
+         * Hiển thị thông báo lỗi hoặc trạng thái.
+         */
+        function showMessage(message, type = 'error') {
+            messageBoxEl.textContent = message;
+            messageBoxEl.classList.remove('hidden', 'bg-red-100', 'text-red-700', 'bg-blue-100', 'text-blue-700');
+            if (type === 'error') {
+                messageBoxEl.classList.add('bg-red-100', 'text-red-700');
+            } else {
+                messageBoxEl.classList.add('bg-blue-100', 'text-blue-700');
+            }
+            // Tự động ẩn sau 5 giây
+            setTimeout(() => {
+                messageBoxEl.classList.add('hidden');
+            }, 5000);
+        }
+        
+        // --- LOCAL STORAGE FUNCTIONS (NEW) ---
+
+        /**
+         * Lấy danh sách công việc từ LocalStorage.
+         */
+        function getTasksFromStorage() {
+            try {
+                const data = localStorage.getItem(STORAGE_KEY);
+                // Trả về mảng rỗng nếu không có dữ liệu
+                return data ? JSON.parse(data) : []; 
+            } catch (error) {
+                console.error("Lỗi khi đọc LocalStorage:", error);
+                return [];
+            }
+        }
+
+        /**
+         * Lưu danh sách công việc vào LocalStorage.
+         */
+        function saveTasksToStorage(tasks) {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+            } catch (error) {
+                console.error("Lỗi khi ghi vào LocalStorage:", error);
+            }
+        }
+        
+        // --- END LOCAL STORAGE FUNCTIONS ---
+
+        /**
+         * Render (vẽ) một công việc lên giao diện.
+         */
+        function renderTask(task) {
+            const taskItem = document.createElement('div');
+            taskItem.id = `task-${task.id}`;
+            taskItem.className = `task-item flex items-center justify-between p-4 bg-gray-50 rounded-lg shadow-sm hover:shadow-md transition duration-200 ${task.completed ? 'completed-task bg-green-50' : ''}`;
+
+            taskItem.innerHTML = `
+                <div class="flex items-center flex-1 min-w-0">
+                    <button class="toggle-complete-btn text-gray-400 hover:text-indigo-600 transition duration-150 mr-3" data-id="${task.id}" data-completed="${task.completed}">
+                        <i data-lucide="${task.completed ? 'check-circle' : 'circle'}" class="w-6 h-6"></i>
+                    </button>
+                    <span class="text-gray-800 break-words flex-1 min-w-0 ${task.completed ? 'completed-task' : ''}">${task.name}</span>
+                </div>
+                <div class="flex items-center space-x-2 ml-4">
+                    <button class="delete-task-btn text-red-500 hover:text-red-700 transition duration-150 p-1 rounded-full hover:bg-red-50" data-id="${task.id}">
+                        <i data-lucide="trash-2" class="w-5 h-5"></i>
+                    </button>
+                </div>
+            `;
+            
+            taskListEl.appendChild(taskItem);
+        }
+
+        /**
+         * Lấy danh sách công việc từ LocalStorage và render.
+         * Logic này thay thế hoàn toàn cho Fetch API gọi đến Node.js server.
+         */
+        async function loadTasks() {
+            loadingIndicatorEl.classList.remove('hidden');
+            taskListEl.innerHTML = '';
+            
+            try {
+                // Lấy tasks từ LocalStorage
+                const tasks = getTasksFromStorage();
+
+                loadingIndicatorEl.classList.add('hidden');
+                
+                if (tasks.length === 0) {
+                    taskListEl.innerHTML = '<p class="text-center text-gray-400 py-4">Chưa có công việc nào. Hãy thêm một nhiệm vụ!</p>';
+                    return;
+                }
+
+                // Sắp xếp tasks trong bộ nhớ (ví dụ: task chưa hoàn thành lên đầu)
+                tasks.sort((a, b) => (a.completed === b.completed) ? 0 : a.completed ? 1 : -1);
+
+                tasks.forEach(task => renderTask(task));
+                lucide.createIcons();
+
+            } catch (error) {
+                console.error("[Lỗi tải công việc] (Local)", error);
+                loadingIndicatorEl.classList.add('hidden');
+                showMessage(`Lỗi khi tải công việc từ bộ nhớ cục bộ: ${error.message}`, 'error');
+            }
+        }
+
+        /**
+         * Thêm công việc mới và lưu vào LocalStorage.
+         */
+        async function addTask() {
+            const taskName = taskInputEl.value.trim();
+            if (taskName === '') {
+                showMessage('Vui lòng nhập tên công việc.', 'info');
+                return;
+            }
+            
+            try {
+                const tasks = getTasksFromStorage();
+                
+                const newTodo = { 
+                    // Tạo ID đơn giản dựa trên thời gian
+                    id: Date.now().toString(), 
+                    name: taskName, 
+                    completed: false, 
+                    userId: userId,
+                    createdAt: new Date().toISOString()
+                };
+
+                tasks.push(newTodo);
+                saveTasksToStorage(tasks);
+                
+                // Xóa nội dung input và tải lại danh sách
+                taskInputEl.value = '';
+                showMessage('Đã thêm công việc thành công.', 'info');
+                await loadTasks(); 
+
+            } catch (error) {
+                console.error("[Lỗi thêm công việc] (Local)", error);
+                showMessage(`Lỗi khi thêm công việc: ${error.message}`, 'error');
+            }
+        }
+
+        /**
+         * Đánh dấu công việc là đã hoàn thành hoặc chưa hoàn thành trong LocalStorage.
+         */
+        async function toggleTaskComplete(taskId, currentStatus) {
+            
+            try {
+                let tasks = getTasksFromStorage();
+                const taskIndex = tasks.findIndex(t => t.id === taskId);
+
+                if (taskIndex !== -1) {
+                    tasks[taskIndex].completed = !currentStatus;
+                    saveTasksToStorage(tasks);
+                    
+                    showMessage(`Cập nhật công việc ${taskId} thành công!`, 'info');
+                    await loadTasks(); 
+                } else {
+                    showMessage('Không tìm thấy công việc để cập nhật.', 'error');
+                }
+
+            } catch (error) {
+                console.error("[Lỗi cập nhật trạng thái] (Local)", error);
+                showMessage(`Lỗi khi cập nhật trạng thái: ${error.message}`, 'error');
+            }
+        }
+
+        
+        async function deleteTask(taskId) {
+            
+            try {
+                let tasks = getTasksFromStorage();
+                const initialLength = tasks.length;
+                
+              
+                tasks = tasks.filter(t => t.id !== taskId);
+
+                if (tasks.length < initialLength) {
+                    saveTasksToStorage(tasks);
+                    showMessage(`Đã xóa công việc ${taskId} thành công!`, 'info');
+                    await loadTasks(); 
+                } else {
+                     showMessage('Không tìm thấy công việc để xóa.', 'error');
+                }
+
+            } catch (error) {
+                console.error("[Lỗi xóa công việc] (Local)", error);
+                showMessage(`Lỗi khi xóa công việc: ${error.message}`, 'error');
+            }
+        }
+
+
+
+        addTaskButtonEl.addEventListener('click', addTask);
+        
+        taskInputEl.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                addTask();
+            }
+        });
+
+        taskListEl.addEventListener('click', (e) => {
+            const target = e.target.closest('button');
+            if (!target) return;
+
+            const taskId = target.dataset.id;
+            if (!taskId) return;
+
+            if (target.classList.contains('delete-task-btn')) {
+                deleteTask(taskId);
+            }
+
+            if (target.classList.contains('toggle-complete-btn')) {
+                const isCompleted = target.dataset.completed === 'true';
+                toggleTaskComplete(taskId, isCompleted);
+            }
+        });
